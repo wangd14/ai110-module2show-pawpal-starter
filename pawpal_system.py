@@ -236,6 +236,8 @@ class Scheduler:
 
         Returns the newly created follow-up Task, or None if the task is 'once'.
         """
+        if task.status == Status.COMPLETED:
+            return None
         task.mark_complete()
         next_task = task.next_occurrence()
         if next_task:

@@ -34,6 +34,31 @@ The `Scheduler` class includes several features beyond basic task generation:
 
 **Conflict detection** — `Scheduler.find_conflicts()` scans all pending tasks and returns every pair scheduled at the exact same time, whether for the same pet or different pets. It never raises an exception — callers receive an empty list when no conflicts exist and display a warning message otherwise.
 
+## Testing PawPal+
+
+### Run the tests
+
+```bash
+python -m pytest
+```
+
+### What the tests cover
+
+| Area | What is verified |
+|---|---|
+| **Sorting** | Tasks are returned in chronological order; same-time tasks break ties by priority (HIGH → MEDIUM → LOW) |
+| **Recurrence** | Completing a `daily` task schedules a new task exactly 24 h later; `weekly` shifts by 7 days; `once` produces no follow-up |
+| **Idempotency** | Calling `complete_task` twice on the same task does not create duplicate recurrences |
+| **Conflict detection** | Pairs of PENDING tasks at the same datetime are flagged; completed/cancelled tasks are ignored; three-way conflicts produce all 3 pairs |
+| **Task linkage** | `schedule_task` adds the task to both `owner.tasks` and the matching `pet.tasks` |
+| **Status transitions** | `mark_complete` sets status to `COMPLETED`; `reschedule` resets it to `PENDING` |
+
+### Confidence level
+
+**4 / 5 stars**
+
+Core scheduling behaviors — sorting, recurrence, and conflict detection — are well-covered and all 14 tests pass. One star held back because the `owner.tasks` deduplication gap (a task can be added twice via `schedule_task`) is identified but not yet fixed in the production code, and the Streamlit UI layer has no automated tests.
+
 ## Getting started
 
 ### Setup
