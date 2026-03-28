@@ -1,6 +1,44 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+from enum import Enum
 from typing import Optional
+import uuid
+
+
+class Priority(Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class Status(Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class Task:
+    datetime: datetime
+    title: str
+    details: str
+    priority: Priority
+    status: Status
+    pet_id: str  # matches Pet.id
+    frequency: str = "once"  # "once", "daily", "weekly"
+
+    def is_overdue(self) -> bool:
+        """Returns True if the task is pending and its scheduled time has passed."""
+        return self.status == Status.PENDING and self.datetime < datetime.now()
+
+    def mark_complete(self) -> None:
+        """Marks the task as completed."""
+        self.status = Status.COMPLETED
+
+    def reschedule(self, new_datetime: datetime) -> None:
+        """Reschedules the task to a new datetime and resets its status to pending."""
+        self.datetime = new_datetime
+        self.status = Status.PENDING
 
 
 @dataclass
@@ -11,34 +49,38 @@ class Pet:
     breed: str
     weight: float
     special_needs: str = ""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    tasks: list = field(default_factory=list)  # list[Task]
 
     def needs_walk(self) -> bool:
-        pass
+        """Returns True if the pet has no completed walk task today."""
+        today = datetime.now().date()
+        for task in self.tasks:
+            if (
+                "walk" in task.title.lower()
+                and task.status == Status.COMPLETED
+                and task.datetime.date() == today
+            ):
+                return False
+        return self.type.lower() == "dog"
 
-    def feed(self) -> None:
-        pass
+    def feed(self) -> "Task":
+        """Creates and records a feeding task for now."""
+        task = Task(
+            datetime=datetime.now(),
+            title=f"Feed {self.name}",
+            details=f"Feed {self.name} their regular meal.",
+            priority=Priority.HIGH,
+            status=Status.COMPLETED,
+            pet_id=self.id,
+            frequency="daily",
+        )
+        self.tasks.append(task)
+        return task
 
     def update_health_status(self, status: str) -> None:
-        pass
-
-
-@dataclass
-class Task:
-    datetime: datetime
-    title: str
-    details: str
-    priority: str  # "high", "medium", "low"
-    status: str    # "pending", "completed", "cancelled"
-    pet_id: int
-
-    def is_overdue(self) -> bool:
-        pass
-
-    def mark_complete(self) -> None:
-        pass
-
-    def reschedule(self, new_datetime: datetime) -> None:
-        pass
+        """Updates the pet's special needs field with the given health status."""
+        self.special_needs = status
 
 
 class Owner:
@@ -48,29 +90,121 @@ class Owner:
         self.preferences = preferences
         self.pets: list[Pet] = []
         self.tasks: list[Task] = []
+        self._plan_generator: Optional["Scheduler"] = None
+
+    def set_plan_generator(self, generator: "Scheduler") -> None:
+        """Sets the Scheduler instance used to generate this owner's plans."""
+        self._plan_generator = generator
 
     def add_pet(self, pet: Pet) -> None:
-        pass
+        """Adds a pet to the owner's list of pets."""
+        self.pets.append(pet)
+
+    def get_pet_by_id(self, pet_id: str) -> Optional[Pet]:
+        """Returns the pet matching the given ID, or None if not found."""
+        for pet in self.pets:
+            if pet.id == pet_id:
+                return pet
+        return None
 
     def schedule_task(self, task: Task) -> None:
-        pass
+        """Adds a task to the owner's task list and links it to the associated pet."""
+        self.tasks.append(task)
+        pet = self.get_pet_by_id(task.pet_id)
+        if pet and task not in pet.tasks:
+            pet.tasks.append(task)
 
     def view_todays_tasks(self) -> list[Task]:
-        pass
+        """Returns all tasks scheduled for today."""
+        today = datetime.now().date()
+        return [t for t in self.tasks if t.datetime.date() == today]
 
     def generate_plan(self) -> None:
-        pass
+        """Generates and schedules a daily plan using the configured plan generator."""
+        if self._plan_generator:
+            new_tasks = self._plan_generator.create_daily_plan(
+                datetime.now(), constraints=self.preferences
+            )
+            for task in new_tasks:
+                self.schedule_task(task)
 
 
-class PlanGenerator:
-    def __init__(self, model_config: dict):
-        self.model_config = model_config
+class Scheduler:
+    """Retrieves, organizes, and manages tasks across all pets for an owner."""
+
+    def __init__(self, owner: Owner, model_config: dict = None):
+        self.owner = owner
+        self.model_config = model_config or {}
 
     def create_daily_plan(self, date: datetime, constraints: dict) -> list[Task]:
-        pass
+        """Generate a default daily task list for every pet owned."""
+        tasks: list[Task] = []
+        preferred_walk_time = constraints.get("preferred_walk_time", "08:00")
+        walk_hour, walk_minute = (int(x) for x in preferred_walk_time.split(":"))
+
+        for pet in self.owner.pets:
+            # Morning feeding
+            tasks.append(Task(
+                datetime=date.replace(hour=7, minute=0, second=0, microsecond=0),
+                title=f"Feed {pet.name}",
+                details=f"Morning meal for {pet.name}.",
+                priority=Priority.HIGH,
+                status=Status.PENDING,
+                pet_id=pet.id,
+                frequency="daily",
+            ))
+
+            # Walk (dogs only)
+            if pet.type.lower() == "dog":
+                tasks.append(Task(
+                    datetime=date.replace(hour=walk_hour, minute=walk_minute, second=0, microsecond=0),
+                    title=f"Walk {pet.name}",
+                    details=f"Daily walk for {pet.name}.",
+                    priority=Priority.HIGH,
+                    status=Status.PENDING,
+                    pet_id=pet.id,
+                    frequency="daily",
+                ))
+
+            # Evening feeding
+            tasks.append(Task(
+                datetime=date.replace(hour=18, minute=0, second=0, microsecond=0),
+                title=f"Feed {pet.name} (evening)",
+                details=f"Evening meal for {pet.name}.",
+                priority=Priority.MEDIUM,
+                status=Status.PENDING,
+                pet_id=pet.id,
+                frequency="daily",
+            ))
+
+        return self.optimize_schedule(tasks)
 
     def generate_weekly_plan(self) -> list[Task]:
-        pass
+        """Generate a daily plan for the next 7 days."""
+        all_tasks: list[Task] = []
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        for day_offset in range(7):
+            day = today + timedelta(days=day_offset)
+            all_tasks.extend(
+                self.create_daily_plan(day, constraints=self.owner.preferences)
+            )
+        return all_tasks
 
     def optimize_schedule(self, tasks: list[Task]) -> list[Task]:
-        pass
+        """Sort tasks by datetime, then by priority (high first)."""
+        priority_order = {Priority.HIGH: 0, Priority.MEDIUM: 1, Priority.LOW: 2}
+        return sorted(tasks, key=lambda t: (t.datetime, priority_order[t.priority]))
+
+    def get_all_tasks(self) -> list[Task]:
+        """Return all tasks across every pet, sorted by schedule."""
+        return self.optimize_schedule(self.owner.tasks)
+
+    def get_overdue_tasks(self) -> list[Task]:
+        """Returns all tasks across the owner's pets that are past due and still pending."""
+        return [t for t in self.owner.tasks if t.is_overdue()]
+
+    def get_tasks_for_pet(self, pet_id: str) -> list[Task]:
+        """Returns all tasks for the specified pet, sorted by schedule."""
+        return self.optimize_schedule(
+            [t for t in self.owner.tasks if t.pet_id == pet_id]
+        )
