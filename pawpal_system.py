@@ -35,6 +35,24 @@ class Task:
         """Marks the task as completed."""
         self.status = Status.COMPLETED
 
+    def next_occurrence(self) -> Optional["Task"]:
+        """Returns a new pending Task for the next occurrence, or None if frequency is 'once'."""
+        if self.frequency == "daily":
+            delta = timedelta(days=1)
+        elif self.frequency == "weekly":
+            delta = timedelta(weeks=1)
+        else:
+            return None
+        return Task(
+            datetime=self.datetime + delta,
+            title=self.title,
+            details=self.details,
+            priority=self.priority,
+            status=Status.PENDING,
+            pet_id=self.pet_id,
+            frequency=self.frequency,
+        )
+
     def reschedule(self, new_datetime: datetime) -> None:
         """Reschedules the task to a new datetime and resets its status to pending."""
         self.datetime = new_datetime
@@ -190,6 +208,10 @@ class Scheduler:
             )
         return all_tasks
 
+    def sort_by_time(self, tasks: list[Task]) -> list[Task]:
+        """Sort tasks by their scheduled time (HH:MM) using a lambda key."""
+        return sorted(tasks, key=lambda t: t.datetime.strftime("%H:%M"))
+
     def optimize_schedule(self, tasks: list[Task]) -> list[Task]:
         """Sort tasks by datetime, then by priority (high first)."""
         priority_order = {Priority.HIGH: 0, Priority.MEDIUM: 1, Priority.LOW: 2}
@@ -208,3 +230,52 @@ class Scheduler:
         return self.optimize_schedule(
             [t for t in self.owner.tasks if t.pet_id == pet_id]
         )
+
+    def complete_task(self, task: Task) -> Optional[Task]:
+        """Mark a task complete and auto-schedule the next occurrence for recurring tasks.
+
+        Returns the newly created follow-up Task, or None if the task is 'once'.
+        """
+        task.mark_complete()
+        next_task = task.next_occurrence()
+        if next_task:
+            self.owner.schedule_task(next_task)
+        return next_task
+
+    def filter_tasks(
+        self,
+        status: Optional[Status] = None,
+        pet_name: Optional[str] = None,
+    ) -> list[Task]:
+        """Filter tasks by completion status and/or pet name.
+
+        Args:
+            status: If provided, only return tasks with this status.
+            pet_name: If provided, only return tasks belonging to the pet with this name.
+        """
+        results = self.owner.tasks
+
+        if status is not None:
+            results = [t for t in results if t.status == status]
+
+        if pet_name is not None:
+            name_lower = pet_name.lower()
+            matching_ids = {p.id for p in self.owner.pets if p.name.lower() == name_lower}
+            results = [t for t in results if t.pet_id in matching_ids]
+
+        return self.optimize_schedule(results)
+
+    def find_conflicts(self) -> list[tuple[Task, Task]]:
+        """Return pairs of pending tasks that share the exact same scheduled time.
+
+        Detects both same-pet conflicts (e.g. two walks at 08:00 for Buddy) and
+        cross-pet conflicts (e.g. Buddy's walk and Whiskers' vet visit at 08:00).
+        Each conflicting pair is returned once (no duplicates).
+        """
+        pending = [t for t in self.owner.tasks if t.status == Status.PENDING]
+        conflicts: list[tuple[Task, Task]] = []
+        for i, task_a in enumerate(pending):
+            for task_b in pending[i + 1:]:
+                if task_a.datetime == task_b.datetime:
+                    conflicts.append((task_a, task_b))
+        return conflicts

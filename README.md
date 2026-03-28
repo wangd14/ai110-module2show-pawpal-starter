@@ -22,6 +22,18 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+The `Scheduler` class includes several features beyond basic task generation:
+
+**Auto-rescheduling recurring tasks** — When `Scheduler.complete_task(task)` is called on a `daily` or `weekly` task, it automatically creates and schedules the next occurrence (shifted by 1 day or 7 days). Tasks with `frequency="once"` are simply marked complete with no follow-up.
+
+**Time-based sorting** — `Scheduler.sort_by_time(tasks)` returns tasks sorted by their scheduled `datetime`, making it easy to display a chronological view independent of insertion order.
+
+**Flexible filtering** — `Scheduler.filter_tasks(status, pet_name)` accepts optional parameters to narrow tasks by completion status (`PENDING`, `COMPLETED`, `CANCELLED`), by pet name, or both combined.
+
+**Conflict detection** — `Scheduler.find_conflicts()` scans all pending tasks and returns every pair scheduled at the exact same time, whether for the same pet or different pets. It never raises an exception — callers receive an empty list when no conflicts exist and display a warning message otherwise.
+
 ## Getting started
 
 ### Setup
