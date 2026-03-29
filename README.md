@@ -22,6 +22,20 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Features
+
+| Feature | Description |
+|---|---|
+| **Pet registry** | Add multiple pets (name, species, breed, age, weight); each receives a unique UUID for safe cross-referencing. |
+| **Task scheduling** | Create tasks with a date/time, title, details, priority (HIGH / MEDIUM / LOW), and status (PENDING / COMPLETED / CANCELLED). |
+| **Chronological sorting** | `sort_by_time()` uses Python's built-in `sorted()` with a `datetime` key so today's task list always renders in time order, regardless of insertion order. |
+| **Flexible filtering** | `filter_tasks(status, pet_name)` accepts either or both parameters and returns only the matching subset, enabling per-pet or per-status views without touching the underlying data. |
+| **Conflict detection** | `find_conflicts()` iterates all PENDING task pairs with O(n²) comparison and flags every pair whose `datetime` values match exactly — across pets or within the same pet — so the UI can surface a warning before a double-booking goes unnoticed. |
+| **Daily plan generation** | `generate_plan()` / `create_daily_plan()` auto-creates a full set of care tasks (walk, feed, enrichment) for each registered pet anchored to the owner's preferred walk time, then sorts the result chronologically. |
+| **Daily & weekly recurrence** | `complete_task()` inspects the `frequency` field: `daily` tasks spawn a copy shifted +1 day; `weekly` tasks shift +7 days; `once` tasks are simply marked complete with no follow-up. |
+| **Idempotent completion** | A guard clause in `complete_task()` checks whether the task is already `COMPLETED` before creating a recurrence, preventing duplicate entries on double-clicks. |
+| **Owner ↔ Scheduler composition** | `Owner` holds a `Scheduler` reference via `set_plan_generator()`; `Scheduler` holds an `Owner` reference. Both sides delegate to each other, keeping domain logic out of the UI layer. |
+
 ## Smarter Scheduling
 
 The `Scheduler` class includes several features beyond basic task generation:
@@ -78,3 +92,22 @@ pip install -r requirements.txt
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+## 📸 Demo
+
+### System architecture (UML class diagram)
+
+![UML class diagram for PawPal+](mermaid-diagram-2026-03-28-200221.png)
+
+The diagram shows the five core classes — `Owner`, `Pet`, `Task`, `Scheduler`, `Priority`, and `Status` — and their relationships. `Owner` composes `Scheduler` (via `_plan_generator`) and `Scheduler` holds a back-reference to `Owner`; both `Owner` and `Pet` aggregate `Task` lists; `Task` references its pet by UUID rather than by direct object pointer to keep coupling loose.
+
+### App screenshot
+
+<a href="/course_images/ai110/Screenshot 2026-03-28 at 8.03.57 PM.png" target="_blank"><img src='/course_images/ai110/Screenshot 2026-03-28 at 8.03.57 PM.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+
+### App walkthrough
+
+1. **Add a pet** — fill in name, species, breed, age, and weight, then click **Add Pet**. The pet appears in the table with a truncated UUID.
+2. **Schedule a task** — choose a pet, set a date/time, enter a title and priority, click **Add Task**. Any two tasks at the exact same time immediately surface a yellow conflict warning.
+3. **Filter today's tasks** — expand the filter panel, pick a pet or status, and the task table refreshes instantly showing only matching rows sorted chronologically.
+4. **Generate a daily plan** — click **Generate schedule** to auto-populate a full day of care tasks for every registered pet. The plan is sorted by time and re-checked for conflicts on the spot.

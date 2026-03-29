@@ -84,17 +84,50 @@ else:
         owner.schedule_task(new_task)
         st.success(f"Scheduled '{new_task.title}' for {selected_pet_name}.")
 
-    today_tasks = owner.view_todays_tasks()
-    if today_tasks:
-        st.write("**Today's tasks:**")
+    scheduler: Scheduler = st.session_state.scheduler
+
+    # Conflict warnings
+    conflicts = scheduler.find_conflicts()
+    if conflicts:
+        for task_a, task_b in conflicts:
+            pet_a = next((p.name for p in owner.pets if p.id == task_a.pet_id), "?")
+            pet_b = next((p.name for p in owner.pets if p.id == task_b.pet_id), "?")
+            st.warning(
+                f"⚠️ Conflict at {task_a.datetime.strftime('%H:%M')}: "
+                f"**{task_a.title}** ({pet_a}) vs **{task_b.title}** ({pet_b})"
+            )
+
+    # Filter controls
+    with st.expander("Filter tasks", expanded=False):
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filter_pet = st.selectbox(
+                "Pet", ["All"] + [p.name for p in owner.pets], key="filter_pet"
+            )
+        with col_f2:
+            filter_status = st.selectbox(
+                "Status", ["All", "pending", "completed", "cancelled"], key="filter_status"
+            )
+
+    status_map = {"pending": Status.PENDING, "completed": Status.COMPLETED, "cancelled": Status.CANCELLED}
+    filtered = scheduler.filter_tasks(
+        status=status_map.get(filter_status) if filter_status != "All" else None,
+        pet_name=filter_pet if filter_pet != "All" else None,
+    )
+    today_tasks = [t for t in filtered if t.datetime.date() == datetime.now().date()]
+    sorted_tasks = scheduler.sort_by_time(today_tasks)
+
+    if sorted_tasks:
+        st.success(f"{len(sorted_tasks)} task(s) found for today.")
         st.table([
             {
                 "Time": t.datetime.strftime("%H:%M"),
+                "Pet": next((p.name for p in owner.pets if p.id == t.pet_id), "?"),
                 "Title": t.title,
                 "Priority": t.priority.value,
                 "Status": t.status.value,
             }
-            for t in today_tasks
+            for t in sorted_tasks
         ])
     else:
         st.info("No tasks scheduled for today yet.")
@@ -110,7 +143,8 @@ if st.button("Generate schedule"):
         st.warning("Add at least one pet before generating a plan.")
     else:
         owner.generate_plan()
-        plan = owner.view_todays_tasks()
+        scheduler: Scheduler = st.session_state.scheduler
+        plan = scheduler.sort_by_time(owner.view_todays_tasks())
         if plan:
             st.success(f"Generated {len(plan)} tasks for today.")
             st.table([
@@ -123,5 +157,16 @@ if st.button("Generate schedule"):
                 }
                 for t in plan
             ])
+            conflicts = scheduler.find_conflicts()
+            if conflicts:
+                for task_a, task_b in conflicts:
+                    pet_a = next((p.name for p in owner.pets if p.id == task_a.pet_id), "?")
+                    pet_b = next((p.name for p in owner.pets if p.id == task_b.pet_id), "?")
+                    st.warning(
+                        f"⚠️ Conflict at {task_a.datetime.strftime('%H:%M')}: "
+                        f"**{task_a.title}** ({pet_a}) vs **{task_b.title}** ({pet_b})"
+                    )
+            else:
+                st.success("No scheduling conflicts detected.")
         else:
             st.info("Plan generated but no tasks scheduled for today.")
